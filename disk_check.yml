@@ -1,5 +1,5 @@
 ---
-- name: Production Non-Technical Storage Partition Audit
+- name: Automated Storage Capacity Audit
   hosts: all
   gather_facts: yes
   ignore_errors: yes
@@ -17,64 +17,15 @@
       loop: "{{ ansible_facts.mounts }}"
       when: item.size_total > 0
 
-    - name: Pass stats context data back to execution engine
+    - name: Convert array into a single clean text block for the host
+      ansible.builtin.set_fact:
+        host_block: |
+          [SERVER NAME: {{ inventory_hostname }}]
+          ------------------------------------------------------------------------
+          {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
+
+    - name: Pass clean text block back to AWX engine parameters
       ansible.builtin.set_stats:
         data:
-          disk_report: "{{ disk_line }}"
+          summary_report: "{{ host_block }}"
         per_host: true
-
-# This play runs locally on the AWX node using core modules to send the email safely
-- name: Dispatch Non-Technical Storage Metrics Report
-  hosts: localhost
-  gather_facts: no
-  vars:
-    # ======================================================
-    # ENTER YOUR WORKING SMTP PARAMETERS HERE
-    # ======================================================
-    smtp_server_host: "://wwindia.com"
-    smtp_server_port: 25                     
-    email_sender: "notifications@wwindia.com" 
-    email_recipient: "your-email@wwindia.com" # Put your destination inbox email address here
-    # ======================================================
-
-  tasks:
-    - name: Generate clean text report body layout
-      ansible.builtin.set_fact:
-        email_body: |
-          Hello Team,
-
-          Please review the automated Storage Capacity Utilization Report summary detailed below:
-
-          ========================================================================
-                         SERVER STORAGE CAPACITY AUDIT SUMMARY REPORT
-          ========================================================================
-          {% for host in groups['all'] %}
-
-          [SERVER NAME: {{ host }}]
-          ------------------------------------------------------------------------
-          {% if hostvars[host]['disk_report'] is defined %}
-          {% for line in hostvars[host]['disk_report'] %}
-          {{ line }}
-          ------------------------------------------------------------------------
-          {% endfor %}
-          {% else %}
-          Alert: Could not extract storage parameters from this machine. (Server was unreachable or connection timed out).
-          ------------------------------------------------------------------------
-          {% endif %}
-          ========================================================================
-          {% endfor %}
-
-          This report was generated automatically. If you require further assistance or full technical logs, please open the central deployment dashboard.
-
-          Best Regards,
-          Infrastructure Automation Engine
-
-    - name: Send the clean executive report natively via built-in mail module
-      ansible.builtin.mail:
-        host: "{{ smtp_server_host }}"
-        port: "{{ smtp_server_port }}"
-        to: "{{ email_recipient }}"
-        from: "{{ email_sender }}"
-        subject: "Automated Daily Storage Capacity Summary Report"
-        body: "{{ email_body }}"
-      delegate_to: localhost
