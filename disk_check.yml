@@ -59,13 +59,13 @@
 
     - name: Send disk utilization report by email
       ansible.builtin.mail:
-        host: "YOUR_SMTP_SERVER"
-        port: 587
-        username: "YOUR_SMTP_USERNAME"
-        password: "YOUR_SMTP_PASSWORD"
+        host: "mail.wwindia.com"
+        port: 25
+        username: "notifications@wwindia.com"
+        password: "!@#REWgsd"
         to:
-          - "recipient@example.com"
-        from: "automation@example.com"
+          - "recipient@ex"
+        from: "shubham.machewar@ironmountain.com"
         subject: "Storage Capacity Utilization Report - {{ inventory_hostname }}"
         body: "{{ disk_report }}"
         secure: starttls
