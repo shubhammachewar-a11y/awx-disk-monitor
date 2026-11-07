@@ -24,9 +24,8 @@
           ------------------------------------------------------------------------
           {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
 
-    - name: Force report layout mapping to safe string container
+    - name: Push partition summary straight to internal job properties
       ansible.builtin.set_stats:
         data:
-          # Injects our report right into the core system status hook
-          status: "successful\n\n========================================================================\n               SERVER STORAGE CAPACITY AUDIT SUMMARY REPORT\n========================================================================\n{{ host_block }}"
+          summary_report: "{{ host_block }}"
         per_host: false
