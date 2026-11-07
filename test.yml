@@ -1,0 +1,70 @@
+---
+- name: Production Storage Partition Metrics Audit
+  hosts: all
+  gather_facts: yes
+  ignore_errors: yes
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+  tasks:
+    - name: Initialize metrics array storage
+      ansible.builtin.set_fact:
+        disk_line: []
+
+    - name: Extract size breakdowns across all active mounts
+      ansible.builtin.set_fact:
+        disk_line: "{{ disk_line + [ 'Drive Path: ' ~ item.mount ~ '\n  -> Used Space: ' ~ (((item.size_total - item.size_available) / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Free Space: ' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Total Size: ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Space Used Percent: ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '%' ] }}"
+      loop: "{{ ansible_facts.mounts }}"
+      when: item.size_total > 0
+
+    - name: Convert array into a single clean text block for the host
+      ansible.builtin.set_fact:
+        host_block: |
+          [SERVER NAME: {{ inventory_hostname }}]
+          ------------------------------------------------------------------------
+          {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
+
+    - name: Push partition summary straight to internal job properties
+      ansible.builtin.set_stats:
+        data:
+          summary_report: "{{ host_block }}"
+        per_host: false
+
+- name: Dispatch Non-Technical Storage Metrics Report
+  hosts: localhost
+  gather_facts: no
+  vars:
+    # ======================================================
+    # FIXED SMTP PARAMETERS (NO SPECIAL PREFIXES)
+    # ======================================================
+    smtp_server_host: "mail.wwindia.com"       # Plain domain name without ://
+    smtp_server_port: 25                     
+    email_sender: "notifications@wwindia.com" 
+    email_recipient: "shubham.machewar@ironmountain.com"  # Put your destination email address here
+    
+    # REQUIRE_AUTH: Change to 'yes' ONLY if your server requires a password
+    require_smtp_auth: "no"
+    smtp_username: "notifications@wwindia.com"
+    smtp_password: "!@#REWgsd"
+    # ======================================================
+
+  tasks:
+    - name: Send the clean executive report via built-in Python SMTP engine
+      ansible.builtin.shell: |
+        python3 -c "
+        import smtplib
+        from email.mime.text import MIMEText
+
+        body_content = '''Hello Team,\n\nPlease review the automated Storage Capacity Utilization Report summary detailed below:\n\n========================================================================\n               SERVER STORAGE CAPACITY AUDIT SUMMARY REPORT\n========================================================================\n{{ hostvars[groups['all'][0]]['host_block'] | default('No storage data summary could be retrieved.') }}\n========================================================================\n\nThis report was generated automatically. If you require further assistance or full technical logs, please open the central deployment dashboard.\n\nBest Regards,\nInfrastructure Automation Engine'''
+
+        msg = MIMEText(body_content)
+        msg['Subject'] = 'Automated Daily Storage Capacity Summary Report'
+        msg['From'] = '{{ email_sender }}'
+        msg['To'] = '{{ email_recipient }}'
+
+        with smtplib.SMTP('{{ smtp_server_host }}', {{ smtp_server_port }}) as server:
+            if '{{ require_smtp_auth }}'.lower() == 'yes':
+                server.login('{{ smtp_username }}', '{{ smtp_password }}')
+            server.send_message(msg)
+        "
+      delegate_to: localhost
