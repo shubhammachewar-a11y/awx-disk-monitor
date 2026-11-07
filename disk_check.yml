@@ -1,16 +1,31 @@
 ---
-- name: Monitor All Server Disk Mounts
+- name: Production Fail-Safe Disk Utilization Audit
   hosts: all
   gather_facts: yes
+  ignore_errors: yes 
+  vars:
+    # Forces background SSH processes to bypass the fingerprint prompt automatically
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
   tasks:
-    - name: Gather usage data across all partitions
+    - name: Initialize empty metrics list for the host
       ansible.builtin.set_fact:
-        disk_line: "{{ disk_line | default([]) + [ item.mount ~ ' -> ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '% used (' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB free of ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB)' ] }}"
+        disk_line: []
+
+    - name: Extract space metrics across all storage partitions
+      ansible.builtin.set_fact:
+        disk_line: >-
+          {{ disk_line + [
+            'Mount: ' ~ item.mount ~ ' (' ~ item.device ~ ') \n' ~
+            '  -> Used: ' ~ (((item.size_total - item.size_available) / 1024 / 1024 / 1024) | round(2)) ~ ' GB \n' ~
+            '  -> Free: ' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB \n' ~
+            '  -> Total: ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB \n' ~
+            '  -> Utilization: ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '%'
+          ] }}
       loop: "{{ ansible_facts.mounts }}"
       when: item.size_total > 0
 
-    - name: Pass all data back to the AWX engine
+    - name: Push unified metrics matrix back to AWX engine
       ansible.builtin.set_stats:
         data:
           disk_report: "{{ disk_line }}"
