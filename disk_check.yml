@@ -1,5 +1,5 @@
 ---
-- name: Disk Utilization Report
+- name: Server Disk Utilization Report
   hosts: all
   gather_facts: true
 
@@ -9,49 +9,64 @@
 
   tasks:
 
-    - name: Initialize disk report
+    - name: Create disk utilization report
       ansible.builtin.set_fact:
-        disk_report: []
+        disk_report: |
+          ============================================================
+                 SERVER STORAGE CAPACITY UTILIZATION REPORT
+          ============================================================
 
-    - name: Collect filesystem utilization
-      ansible.builtin.set_fact:
-        disk_report: "{{ disk_report + [disk_entry] }}"
-      vars:
-        total_gb: "{{ (item.size_total / 1073741824) | round(2) }}"
-        free_gb: "{{ (item.size_available / 1073741824) | round(2) }}"
-        used_gb: "{{ ((item.size_total - item.size_available) / 1073741824) | round(2) }}"
-        utilization: "{{ (((item.size_total - item.size_available) / item.size_total) * 100) | round(2) }}"
+          Server: {{ inventory_hostname }}
 
-        disk_entry:
-          mount: "{{ item.mount }}"
-          filesystem: "{{ item.fstype }}"
-          total_gb: "{{ total_gb }}"
-          used_gb: "{{ used_gb }}"
-          free_gb: "{{ free_gb }}"
-          utilization: "{{ utilization }}"
-          status: >-
-            {% if utilization | float >= critical_threshold %}
-            CRITICAL
-            {% elif utilization | float >= warning_threshold %}
-            WARNING
-            {% else %}
-            NORMAL
-            {% endif %}
+          Partition    Filesystem    Total       Used        Free        Usage     Status
+          --------------------------------------------------------------------------------
+          {% for disk in ansible_facts.mounts
+             if disk.size_total is defined
+             and disk.size_available is defined
+             and (disk.size_total | int) > 0 %}
 
-      loop: "{{ ansible_facts.mounts }}"
-      when:
-        - item.size_total is defined
-        - item.size_available is defined
-        - item.size_total | int > 0
-        - item.mount is defined
+          {{ "%-12s" | format(disk.mount) }}
+          {{ "%-13s" | format(disk.fstype | default("N/A")) }}
+          {{ "%-11s" | format(((disk.size_total / 1073741824) | round(2)) ~ " GB") }}
+          {{ "%-11s" | format((((disk.size_total - disk.size_available) / 1073741824) | round(2)) ~ " GB") }}
+          {{ "%-11s" | format(((disk.size_available / 1073741824) | round(2)) ~ " GB") }}
+          {{ "%-9s" | format((((disk.size_total - disk.size_available) / disk.size_total * 100) | round(2)) ~ "%") }}
+          {% set usage = ((disk.size_total - disk.size_available) / disk.size_total * 100) %}
+          {% if usage >= critical_threshold %}
+          CRITICAL
+          {% elif usage >= warning_threshold %}
+          WARNING
+          {% else %}
+          NORMAL
+          {% endif %}
 
-    - name: Display disk report
+          {% endfor %}
+
+          --------------------------------------------------------------------------------
+
+          Threshold:
+            NORMAL   : Below {{ warning_threshold }}%
+            WARNING  : {{ warning_threshold }}% - {{ critical_threshold - 0.01 }}%
+            CRITICAL : {{ critical_threshold }}% and above
+
+          ============================================================
+          This report was generated automatically by AWX.
+          ============================================================
+
+    - name: Display disk report in AWX job output
       ansible.builtin.debug:
         msg: "{{ disk_report }}"
 
-    - name: Send disk report data to AWX
-      ansible.builtin.set_stats:
-        data:
-          server_name: "{{ inventory_hostname }}"
-          disk_report: "{{ disk_report }}"
-        per_host: true
+    - name: Send disk utilization report by email
+      ansible.builtin.mail:
+        host: "YOUR_SMTP_SERVER"
+        port: 587
+        username: "YOUR_SMTP_USERNAME"
+        password: "YOUR_SMTP_PASSWORD"
+        to:
+          - "recipient@example.com"
+        from: "automation@example.com"
+        subject: "Storage Capacity Utilization Report - {{ inventory_hostname }}"
+        body: "{{ disk_report }}"
+        secure: starttls
+      delegate_to: localhost
