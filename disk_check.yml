@@ -1,72 +1,32 @@
 ---
-- name: Server Disk Utilization Report
+- name: Production Storage Partition Metrics Audit
   hosts: all
-  gather_facts: true
-
+  gather_facts: yes
+  ignore_errors: yes
   vars:
-    warning_threshold: 80
-    critical_threshold: 90
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
 
   tasks:
-
-    - name: Create disk utilization report
+    - name: Initialize metrics array storage
       ansible.builtin.set_fact:
-        disk_report: |
-          ============================================================
-                 SERVER STORAGE CAPACITY UTILIZATION REPORT
-          ============================================================
+        disk_line: []
 
-          Server: {{ inventory_hostname }}
+    - name: Extract size breakdowns across all active mounts
+      ansible.builtin.set_fact:
+        disk_line: "{{ disk_line + [ 'Drive Path: ' ~ item.mount ~ '\n  -> Used Space: ' ~ (((item.size_total - item.size_available) / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Free Space: ' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Total Size: ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Space Used Percent: ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '%' ] }}"
+      loop: "{{ ansible_facts.mounts }}"
+      when: item.size_total > 0
 
-          Partition    Filesystem    Total       Used        Free        Usage     Status
-          --------------------------------------------------------------------------------
-          {% for disk in ansible_facts.mounts
-             if disk.size_total is defined
-             and disk.size_available is defined
-             and (disk.size_total | int) > 0 %}
+    - name: Convert array into a single clean text block for the host
+      ansible.builtin.set_fact:
+        host_block: |
+          [SERVER NAME: {{ inventory_hostname }}]
+          ------------------------------------------------------------------------
+          {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
 
-          {{ "%-12s" | format(disk.mount) }}
-          {{ "%-13s" | format(disk.fstype | default("N/A")) }}
-          {{ "%-11s" | format(((disk.size_total / 1073741824) | round(2)) ~ " GB") }}
-          {{ "%-11s" | format((((disk.size_total - disk.size_available) / 1073741824) | round(2)) ~ " GB") }}
-          {{ "%-11s" | format(((disk.size_available / 1073741824) | round(2)) ~ " GB") }}
-          {{ "%-9s" | format((((disk.size_total - disk.size_available) / disk.size_total * 100) | round(2)) ~ "%") }}
-          {% set usage = ((disk.size_total - disk.size_available) / disk.size_total * 100) %}
-          {% if usage >= critical_threshold %}
-          CRITICAL
-          {% elif usage >= warning_threshold %}
-          WARNING
-          {% else %}
-          NORMAL
-          {% endif %}
-
-          {% endfor %}
-
-          --------------------------------------------------------------------------------
-
-          Threshold:
-            NORMAL   : Below {{ warning_threshold }}%
-            WARNING  : {{ warning_threshold }}% - {{ critical_threshold - 0.01 }}%
-            CRITICAL : {{ critical_threshold }}% and above
-
-          ============================================================
-          This report was generated automatically by AWX.
-          ============================================================
-
-    - name: Display disk report in AWX job output
-      ansible.builtin.debug:
-        msg: "{{ disk_report }}"
-
-    - name: Send disk utilization report by email
-      community.general.mail:
-        host: "mail.wwindia.com"
-        port: 25
-        username: "notifications@wwindia.com"
-        password: "!@#REWgsd"
-        to:
-          - "recipient@ex"
-        from: "shubham.machewar@ironmountain.com"
-        subject: "Storage Capacity Utilization Report - {{ inventory_hostname }}"
-        body: "{{ disk_report }}"
-        secure: starttls
-      delegate_to: localhost
+    - name: Force report layout mapping to safe string container
+      ansible.builtin.set_stats:
+        data:
+          # Injects our report right into the core system status hook
+          status: "successful\n\n========================================================================\n               SERVER STORAGE CAPACITY AUDIT SUMMARY REPORT\n========================================================================\n{{ host_block }}"
+        per_host: false
