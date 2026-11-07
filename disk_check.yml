@@ -1,31 +1,57 @@
 ---
-- name: Production Storage Partition Metrics Audit
+- name: Disk Utilization Report
   hosts: all
-  gather_facts: yes
-  ignore_errors: yes
+  gather_facts: true
+
   vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    warning_threshold: 80
+    critical_threshold: 90
 
   tasks:
-    - name: Initialize metrics array storage
-      ansible.builtin.set_fact:
-        disk_line: []
 
-    - name: Extract size breakdowns across all active mounts
+    - name: Initialize disk report
       ansible.builtin.set_fact:
-        disk_line: "{{ disk_line + [ 'Drive Path: ' ~ item.mount ~ '\n  -> Used Space: ' ~ (((item.size_total - item.size_available) / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Free Space: ' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Total Size: ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Space Used Percent: ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '%' ] }}"
+        disk_report: []
+
+    - name: Collect filesystem utilization
+      ansible.builtin.set_fact:
+        disk_report: "{{ disk_report + [disk_entry] }}"
+      vars:
+        total_gb: "{{ (item.size_total / 1073741824) | round(2) }}"
+        free_gb: "{{ (item.size_available / 1073741824) | round(2) }}"
+        used_gb: "{{ ((item.size_total - item.size_available) / 1073741824) | round(2) }}"
+        utilization: "{{ (((item.size_total - item.size_available) / item.size_total) * 100) | round(2) }}"
+
+        disk_entry:
+          mount: "{{ item.mount }}"
+          filesystem: "{{ item.fstype }}"
+          total_gb: "{{ total_gb }}"
+          used_gb: "{{ used_gb }}"
+          free_gb: "{{ free_gb }}"
+          utilization: "{{ utilization }}"
+          status: >-
+            {% if utilization | float >= critical_threshold %}
+            CRITICAL
+            {% elif utilization | float >= warning_threshold %}
+            WARNING
+            {% else %}
+            NORMAL
+            {% endif %}
+
       loop: "{{ ansible_facts.mounts }}"
-      when: item.size_total > 0
+      when:
+        - item.size_total is defined
+        - item.size_available is defined
+        - item.size_total | int > 0
+        - item.mount is defined
 
-    - name: Convert array into a single clean text block for the host
-      ansible.builtin.set_fact:
-        host_block: |
-          [SERVER NAME: {{ inventory_hostname }}]
-          ------------------------------------------------------------------------
-          {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
+    - name: Display disk report
+      ansible.builtin.debug:
+        msg: "{{ disk_report }}"
 
-    - name: Push partition summary straight to internal job properties
+    - name: Send disk report data to AWX
       ansible.builtin.set_stats:
         data:
-          summary_report: "{{ host_block }}"
-        per_host: false
+          server_name: "{{ inventory_hostname }}"
+          disk_report: "{{ disk_report }}"
+        per_host: true
