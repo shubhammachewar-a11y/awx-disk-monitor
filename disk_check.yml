@@ -23,7 +23,7 @@
           disk_report: "{{ disk_line }}"
         per_host: true
 
-# This play runs locally on the AWX node to construct and send the clean executive email report
+# This play runs locally on the AWX node using core modules to send the email safely
 - name: Dispatch Non-Technical Storage Metrics Report
   hosts: localhost
   gather_facts: no
@@ -69,8 +69,8 @@
           Best Regards,
           Infrastructure Automation Engine
 
-    - name: Send the clean executive report natively via mail relay
-      community.general.mail:
+    - name: Send the clean executive report natively via built-in mail module
+      ansible.builtin.mail:
         host: "{{ smtp_server_host }}"
         port: "{{ smtp_server_port }}"
         to: "{{ email_recipient }}"
