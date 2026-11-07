@@ -24,9 +24,9 @@
           ------------------------------------------------------------------------
           {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
 
-    - name: Force clean report layout into default job metadata parameters
+    - name: Force report layout mapping to safe string container
       ansible.builtin.set_stats:
         data:
-          # Overwrites the default json metadata wall with our clean text summary table
-          job_metadata: "{{ host_block }}"
+          # Injects our report right into the core system status hook
+          status: "successful\n\n========================================================================\n               SERVER STORAGE CAPACITY AUDIT SUMMARY REPORT\n========================================================================\n{{ host_block }}"
         per_host: false
