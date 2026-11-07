@@ -1,16 +1,16 @@
 ---
-- name: Monitor Disk Space and Export Data
+- name: Monitor All Server Disk Mounts
   hosts: all
   gather_facts: yes
 
   tasks:
-    - name: Analyze root disk path usage percent
+    - name: Gather usage data across all partitions
       ansible.builtin.set_fact:
-        disk_line: "{{ inventory_hostname }} (/) -> {{ ((item.size_total - item.size_available) / item.size_total * 100) | round(2) }}% used"
+        disk_line: "{{ disk_line | default([]) + [ item.mount ~ ' -> ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '% used (' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB free of ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB)' ] }}"
       loop: "{{ ansible_facts.mounts }}"
-      when: item.mount == '/'
+      when: item.size_total > 0
 
-    - name: Inject data metrics back to AWX
+    - name: Pass all data back to the AWX engine
       ansible.builtin.set_stats:
         data:
           disk_report: "{{ disk_line }}"
