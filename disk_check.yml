@@ -58,7 +58,7 @@
         msg: "{{ disk_report }}"
 
     - name: Send disk utilization report by email
-      ansible.builtin.mail:
+      community.general.mail:
         host: "mail.wwindia.com"
         port: 25
         username: "notifications@wwindia.com"
