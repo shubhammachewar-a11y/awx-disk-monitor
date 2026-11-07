@@ -1,5 +1,5 @@
 ---
-- name: Automated Storage Capacity Audit
+- name: Production Storage Partition Metrics Audit
   hosts: all
   gather_facts: yes
   ignore_errors: yes
@@ -11,7 +11,7 @@
       ansible.builtin.set_fact:
         disk_line: []
 
-    - name: Compile clean layout metrics across all partitions
+    - name: Extract size breakdowns across all active mounts
       ansible.builtin.set_fact:
         disk_line: "{{ disk_line + [ 'Drive Path: ' ~ item.mount ~ '\n  -> Used Space: ' ~ (((item.size_total - item.size_available) / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Free Space: ' ~ ((item.size_available / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Total Size: ' ~ ((item.size_total / 1024 / 1024 / 1024) | round(2)) ~ ' GB\n  -> Space Used Percent: ' ~ (((item.size_total - item.size_available) / item.size_total * 100) | round(2)) ~ '%' ] }}"
       loop: "{{ ansible_facts.mounts }}"
@@ -24,8 +24,9 @@
           ------------------------------------------------------------------------
           {{ disk_line | join('\n------------------------------------------------------------------------\n') }}
 
-    - name: Pass clean text block back to AWX engine parameters
+    - name: Force clean report layout into default job metadata parameters
       ansible.builtin.set_stats:
         data:
-          summary_report: "{{ host_block }}"
-        per_host: true
+          # Overwrites the default json metadata wall with our clean text summary table
+          job_metadata: "{{ host_block }}"
+        per_host: false
