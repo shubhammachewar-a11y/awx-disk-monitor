@@ -1,0 +1,20 @@
+---
+- name: Check community.general
+  hosts: all
+  gather_facts: false
+
+  tasks:
+
+    - name: Show Ansible version
+      ansible.builtin.debug:
+        msg: "Ansible version: {{ ansible_version.full }}"
+
+    - name: Check community.general mail module
+      ansible.builtin.command:
+        cmd: ansible-doc community.general.mail
+      delegate_to: localhost
+      register: mail_module
+
+    - name: Display result
+      ansible.builtin.debug:
+        var: mail_module.stdout
