@@ -1,27 +1,37 @@
 ---
-- name: Test AWX Custom Statistics
+- name: Server Disk Utilization Report
   hosts: all
-  gather_facts: false
+  gather_facts: true
 
   tasks:
 
-    - name: Create test disk report
+    - name: Get filesystem utilization
+      ansible.builtin.command:
+        cmd: df -hT
+      register: disk_usage
+      changed_when: false
+
+    - name: Create disk utilization report
       ansible.builtin.set_fact:
         disk_report: |
-          Server: {{ inventory_hostname }}
+          ================================================================
+                    SERVER STORAGE CAPACITY UTILIZATION REPORT
+          ================================================================
 
-          Disk Utilization Report
-          -----------------------
-          /          : 72% - NORMAL
-          /backup    : 85% - WARNING
-          /data      : 92% - CRITICAL
+          Server Name : {{ inventory_hostname }}
 
-    - name: Save report to AWX job statistics
+          {{ disk_usage.stdout }}
+
+          ================================================================
+          Report generated automatically by Ansible AWX
+          ================================================================
+
+    - name: Display disk report
+      ansible.builtin.debug:
+        msg: "{{ disk_report }}"
+
+    - name: Save disk report to AWX statistics
       ansible.builtin.set_stats:
         data:
           disk_report: "{{ disk_report }}"
         per_host: false
-
-    - name: Display report
-      ansible.builtin.debug:
-        msg: "{{ disk_report }}"
