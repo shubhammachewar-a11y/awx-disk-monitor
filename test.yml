@@ -1,1 +1,27 @@
+---
+- name: Test AWX Custom Statistics
+  hosts: all
+  gather_facts: false
 
+  tasks:
+
+    - name: Create test disk report
+      ansible.builtin.set_fact:
+        disk_report: |
+          Server: {{ inventory_hostname }}
+
+          Disk Utilization Report
+          -----------------------
+          /          : 72% - NORMAL
+          /backup    : 85% - WARNING
+          /data      : 92% - CRITICAL
+
+    - name: Save report to AWX job statistics
+      ansible.builtin.set_stats:
+        data:
+          disk_report: "{{ disk_report }}"
+        per_host: false
+
+    - name: Display report
+      ansible.builtin.debug:
+        msg: "{{ disk_report }}"
